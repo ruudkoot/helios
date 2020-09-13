@@ -6,6 +6,7 @@ module Helios.Data.Calendar.Types
   ) where
 
 newtype Date = Date { toJulianDay :: Int }
+  deriving ( Eq, Ord )
 
 fromJulianDay :: Int -> Date
 fromJulianDay = Date
