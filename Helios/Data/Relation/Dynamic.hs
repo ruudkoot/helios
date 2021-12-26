@@ -22,7 +22,7 @@ import qualified Data.Array as Array
 import qualified Data.List as List
 
 import           Helios.Data.Dynamic
-import           Helios.Data.List
+import qualified Helios.Data.List as List
 import qualified Helios.Data.Map as Map
 import           Helios.Data.Maybe
 import qualified Helios.Data.Set as Set
@@ -49,6 +49,7 @@ instance Show Attribute where
 data ColumnList
   = forall a. Dynamic a => ColumnList { columnData' :: [a] }
 
+-- FIXME: make work on empty rows
 toColumnList :: [Packet] -> ColumnList
 toColumnList [Packet x]
   = ColumnList [x]
@@ -103,7 +104,7 @@ addIndex as rel
 
 createIndex :: [Attribute] -> Map.Map Attribute Column -> Index
 createIndex as cs
-  = foldl' (createIndex' cs as) (emptyIndex cs as) [0 .. cardinality' cs - 1]
+  = List.foldl' (createIndex' cs as) (emptyIndex cs as) [0 .. cardinality' cs - 1]
 
 createIndex'
   :: Map.Map Attribute Column
@@ -146,6 +147,16 @@ data Relation
 
 instance Show Relation where
   show = showRelation
+
+--------------------------------------------------------------------------------
+-- * Tables
+--------------------------------------------------------------------------------
+
+data Table
+  = forall r. Row r => Table { rows :: [r] }
+
+--instance Show Table where
+--  show = showTable
 
 --------------------------------------------------------------------------------
 -- * Constructors
@@ -209,8 +220,15 @@ mkLine l m r
 project :: [Attribute] -> Relation -> Relation
 project as rel =
   Relation
-  { columns = Map.restrictKeys (columns rel) (Set.fromList as)
-  , indices = undefined
+  { columns
+      = Map.restrictKeys (columns rel) (Set.fromList as)
+  , indices
+      = Map.restrictKeys
+          (indices rel)
+          (Set.filter
+            (\ks -> Set.fromList ks `Set.isSubsetOf` Set.fromList as)
+            (Set.fromList (Map.keys (indices rel)))
+          )
   }
 
 --------------------------------------------------------------------------------
