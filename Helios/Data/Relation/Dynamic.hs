@@ -1,4 +1,6 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
@@ -14,6 +16,7 @@ module Helios.Data.Relation.Dynamic
   , attributes
   , arity
   , cardinality
+  , extend
   , filter
   , project
   ) where
@@ -258,7 +261,10 @@ mkLine l m r
 -- * Algebra
 --------------------------------------------------------------------------------
 
-package :: [Attribute] -> Relation -> [[Packet]]
+package
+  :: [Attribute]
+  -> Relation
+  -> [[Packet]]
 package as r
   = foldr f e as
   where
@@ -267,7 +273,30 @@ package as r
     f a x
       = zipWith (:) (fromColumn (getColumn a r)) x
 
-filter :: Predicate a => [Attribute] -> a -> Relation -> Relation
+extend
+  :: forall r a. (Dynamic r, DynamicFunction r a)
+  => [Attribute]
+  -> Attribute
+  -> a
+  -> Relation
+  -> Relation
+extend as a f r
+  = applyRelation extendC id r
+  where
+    extendC columns
+      = Map.insertWithKey errorExtendNotDisjoint a newColumn columns
+    newColumn
+      = Column
+      $ Array.listArray (0, cardinality r - 1)
+      $ fmap (applyDynamicFunction f :: [Packet] -> r) (package as r)
+
+-- FIXME: express in terms of 'extend'
+filter
+  :: DynamicFunction Bool a
+  => [Attribute]
+  -> a
+  -> Relation
+  -> Relation
 filter as p r
   = applyRelation filterC filterI r
   where
@@ -276,14 +305,17 @@ filter as p r
       where
         bitmap
           = Array.listArray (0, cardinality r - 1)
-          $ fmap (applyPredicate p) (package as r)
+          $ fmap (applyDynamicFunction p) (package as r)
         filterC' (Column c)
           = Column (Array.select bitmap c)
     filterI
       -- FIXME: implement
       = id
 
-project :: [Attribute] -> Relation -> Relation
+project
+  :: [Attribute]
+  -> Relation
+  -> Relation
 project as rel
   = Relation
     { columns
@@ -303,6 +335,9 @@ project as rel
 
 errorDuplicate
   = error "Duplicate key"
+
+errorExtendNotDisjoint k _ _
+  = error $ "extend: not disjoint (" ++ show k ++ ")"
 
 errorFilterCast
   = error "filter: cast"

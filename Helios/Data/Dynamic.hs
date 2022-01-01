@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Helios.Data.Dynamic
   ( module Data.Proxy
@@ -8,7 +9,7 @@ module Helios.Data.Dynamic
   , Dynamic(..)
   , Packet(..)
   , Row(..)
-  , Predicate(..)
+  , DynamicFunction(..)
   ) where
 
 import Data.Maybe ( fromJust )
@@ -67,27 +68,27 @@ instance (Dynamic t1, Dynamic t2, Dynamic t3, Dynamic t4, Dynamic t5)
   rowIndex 4 (_,_,_,_,x) = Packet x
 
 --------------------------------------------------------------------------------
--- Predicate
+-- Dynamic function
 --------------------------------------------------------------------------------
 
 -- TODO: nice error message if 'unification' fails
 
-class Predicate a where
-  applyPredicate :: a -> [Packet] -> Bool
+class DynamicFunction r a where
+  applyDynamicFunction :: a -> [Packet] -> r
 
 instance
-    Predicate Bool
+    DynamicFunction r r
   where
-    applyPredicate f []
+    applyDynamicFunction f []
       = f
 
 instance
     ( Dynamic t1
     )
     =>
-    Predicate (t1 -> Bool)
+    DynamicFunction r (t1 -> r)
   where
-    applyPredicate f [Packet x1]
+    applyDynamicFunction f [Packet x1]
       | Just x1' <- cast x1
         = f x1'
 
@@ -96,9 +97,9 @@ instance
     , Dynamic t2
     )
     =>
-    Predicate (t1 -> t2 -> Bool)
+    DynamicFunction r (t1 -> t2 -> r)
   where
-    applyPredicate f [Packet x1, Packet x2]
+    applyDynamicFunction f [Packet x1, Packet x2]
       | Just x1' <- cast x1
       , Just x2' <- cast x2
         = f x1' x2'
@@ -109,9 +110,9 @@ instance
     , Dynamic t3
     )
     =>
-    Predicate (t1 -> t2 -> t3 -> Bool)
+    DynamicFunction r (t1 -> t2 -> t3 -> r)
   where
-    applyPredicate f [Packet x1, Packet x2, Packet x3]
+    applyDynamicFunction f [Packet x1, Packet x2, Packet x3]
       | Just x1' <- cast x1
       , Just x2' <- cast x2
       , Just x3' <- cast x3
@@ -124,9 +125,9 @@ instance
     , Dynamic t4
     )
     =>
-    Predicate (t1 -> t2 -> t3 -> t4 -> Bool)
+    DynamicFunction r (t1 -> t2 -> t3 -> t4 -> r)
   where
-    applyPredicate f [Packet x1, Packet x2, Packet x3, Packet x4]
+    applyDynamicFunction f [Packet x1, Packet x2, Packet x3, Packet x4]
       | Just x1' <- cast x1
       , Just x2' <- cast x2
       , Just x3' <- cast x3
@@ -141,9 +142,9 @@ instance
     , Dynamic t5
     )
     =>
-    Predicate (t1 -> t2 -> t3 -> t4 -> t5 -> Bool)
+    DynamicFunction r (t1 -> t2 -> t3 -> t4 -> t5 -> r)
   where
-    applyPredicate f [Packet x1, Packet x2, Packet x3, Packet x4, Packet x5]
+    applyDynamicFunction f [Packet x1, Packet x2, Packet x3, Packet x4, Packet x5]
       | Just x1' <- cast x1
       , Just x2' <- cast x2
       , Just x3' <- cast x3
