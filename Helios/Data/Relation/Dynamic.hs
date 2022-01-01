@@ -14,13 +14,15 @@ module Helios.Data.Relation.Dynamic
   , attributes
   , arity
   , cardinality
+  , filter
   , project
   ) where
 
-import           Control.Arrow ((***))
-import qualified Data.Array as Array
-import qualified Data.List as List
+import Prelude hiding ( filter )
 
+import           Control.Arrow ((***))
+
+import qualified Helios.Data.Array as Array
 import           Helios.Data.Dynamic
 import qualified Helios.Data.List as List
 import qualified Helios.Data.Map as Map
@@ -61,11 +63,24 @@ data Column
   = forall a. Dynamic a => Column { columnData :: Array.Array Int a }
 
 fromColumnList :: ColumnList -> Column
-fromColumnList (ColumnList x) = Column (Array.listArray (0, length x - 1) x)
+fromColumnList (ColumnList x)
+  = Column (Array.listArray (0, length x - 1) x)
+
+toColumnList' :: Column -> ColumnList
+toColumnList' (Column x)
+  = ColumnList (Array.elems x)
+
+fromColumnList' :: ColumnList -> [Packet]
+fromColumnList' (ColumnList x)
+  = map Packet x
 
 toColumn :: [Packet] -> Column
 toColumn
   = fromColumnList . toColumnList
+
+fromColumn :: Column -> [Packet]
+fromColumn
+  = fromColumnList' . toColumnList'
 
 -- FIXME: make work on empty columns
 typeOfElem :: Typeable a => Array.Array Int a -> TypeRep
@@ -104,7 +119,10 @@ addIndex as rel
 
 createIndex :: [Attribute] -> Map.Map Attribute Column -> Index
 createIndex as cs
-  = List.foldl' (createIndex' cs as) (emptyIndex cs as) [0 .. cardinality' cs - 1]
+  = List.foldl'
+      (createIndex' cs as)
+      (emptyIndex cs as)
+      [0 .. cardinality' cs - 1]
 
 createIndex'
   :: Map.Map Attribute Column
@@ -147,6 +165,18 @@ data Relation
 
 instance Show Relation where
   show = showRelation
+
+getColumn :: Attribute -> Relation -> Column
+getColumn a r
+  = columns r Map.! a
+
+applyRelation f g rel
+  = Relation
+    { columns
+        = f (columns rel)
+    , indices
+        = g (indices rel)
+    }
 
 --------------------------------------------------------------------------------
 -- * Tables
@@ -197,17 +227,28 @@ cardinality = cardinality' . columns
 
 showRelation :: Relation -> String
 showRelation rel
-  = let cols1 :: [(Attribute,Column)] = toList rel
-        cols2 :: [[String]] = map (\(h,c) -> (show h ++ ":" ++ show (columnType c)) : columnShown c) cols1
-        widths :: [Int] = map (maximum . map length) cols2
-        lineT = mkLine "┌" "┬" "┐" widths
-        lineM = mkLine "├" "┼" "┤" widths
-        lineB = mkLine "└" "┴" "┘" widths
-        cols3 :: [[String]] = zipWith (\n -> map (String.padLeft ' ' n)) widths cols2
-        rows1 = List.transpose cols3
-        (h2:rows2) = map (String.bracket1 "│" . List.intercalate "│") rows1
-        rows3 = [lineT,h2,lineM] ++ rows2 ++ [lineB]
-    in List.intercalate "\n" rows3 ++ show (indices rel)
+  = List.intercalate "\n" rows3 ++ show (indices rel)
+  where
+    cols1 :: [(Attribute,Column)]
+      = toList rel
+    cols2 :: [[String]]
+      = map (\(h,c) -> (show h ++ ":" ++ show (columnType c)) : columnShown c) cols1
+    widths :: [Int]
+      = map (maximum . map length) cols2
+    lineT
+      = mkLine "┌" "┬" "┐" widths
+    lineM
+      = mkLine "├" "┼" "┤" widths
+    lineB
+      = mkLine "└" "┴" "┘" widths
+    cols3 :: [[String]]
+      = zipWith (\n -> map (String.padLeft ' ' n)) widths cols2
+    rows1
+      = List.transpose cols3
+    (h2:rows2)
+      = map (String.bracket1 "│" . List.intercalate "│") rows1
+    rows3
+      = [lineT,h2,lineM] ++ rows2 ++ [lineB]
 
 mkLine :: String -> String -> String -> [Int] -> String
 mkLine l m r
@@ -217,19 +258,44 @@ mkLine l m r
 -- * Algebra
 --------------------------------------------------------------------------------
 
+package :: [Attribute] -> Relation -> [[Packet]]
+package as r
+  = foldr f e as
+  where
+    e
+      = replicate (cardinality r) []
+    f a x
+      = zipWith (:) (fromColumn (getColumn a r)) x
+
+filter :: Predicate a => [Attribute] -> a -> Relation -> Relation
+filter as p r
+  = applyRelation filterC filterI r
+  where
+    filterC columns
+      = Map.map filterC' columns
+      where
+        bitmap
+          = Array.listArray (0, cardinality r - 1)
+          $ fmap (applyPredicate p) (package as r)
+        filterC' (Column c)
+          = Column (Array.select bitmap c)
+    filterI
+      -- FIXME: implement
+      = id
+
 project :: [Attribute] -> Relation -> Relation
-project as rel =
-  Relation
-  { columns
-      = Map.restrictKeys (columns rel) (Set.fromList as)
-  , indices
-      = Map.restrictKeys
-          (indices rel)
-          (Set.filter
-            (\ks -> Set.fromList ks `Set.isSubsetOf` Set.fromList as)
-            (Set.fromList (Map.keys (indices rel)))
-          )
-  }
+project as rel
+  = Relation
+    { columns
+        = Map.restrictKeys (columns rel) (Set.fromList as)
+    , indices
+        = Map.restrictKeys
+            (indices rel)
+            (Set.filter
+              (\ks -> Set.fromList ks `Set.isSubsetOf` Set.fromList as)
+              (Set.fromList (Map.keys (indices rel)))
+            )
+    }
 
 --------------------------------------------------------------------------------
 -- * Errors
@@ -237,6 +303,9 @@ project as rel =
 
 errorDuplicate
   = error "Duplicate key"
+
+errorFilterCast
+  = error "filter: cast"
 
 errorWidthMismatch widthH widthR
   = error $
