@@ -3,25 +3,28 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 
 -- delayed operations in Relation data type
 -- deep vs shallow expressions passed to combinators
 -- type-specialized Columns and Indices
 
 module Helios.Data.Relation.Dynamic
-  ( Attribute
-  , Relation
-  , addIndex
-  , relationR
-  , attributes
-  , arity
-  , cardinality
-  , extend
-  , filter
-  , project
-  ) where
+( Attribute
+, Relation
+, addIndex
+, relationR
+, attributes
+, arity
+, cardinality
+, extend
+, filter
+, project
+, Aggregator(..)
+, aggregate
+) where
 
-import Prelude hiding ( filter )
+import           Prelude hiding ( filter )
 
 import           Control.Arrow ((***))
 
@@ -106,6 +109,27 @@ cardinality'' :: Column -> Int
 cardinality'' (Column x)
   = (succ . snd) (Array.bounds x)
 
+packetize
+  :: [Attribute]
+  -> Relation
+  -> [[Packet]]
+packetize as r
+  = foldr f e as
+  where
+    e
+      = replicate (cardinality r) []
+    f a x
+      = zipWith (:) (fromColumn (getColumn a r)) x
+
+unpacketize
+  :: [Attribute]
+  -> [[Packet]]
+  -> Relation
+unpacketize as pss
+  = relationFromColumns as
+  $ map toColumn
+  $ List.transpose pss
+
 --------------------------------------------------------------------------------
 -- * Indices
 --------------------------------------------------------------------------------
@@ -169,6 +193,16 @@ data Relation
 instance Show Relation where
   show = showRelation
 
+-- FIXME: add primary key
+relationFromColumns :: [Attribute] -> [Column] -> Relation
+relationFromColumns as cs
+  = Relation
+    { columns
+        = Map.fromList (zip as cs)
+    , indices
+        = Map.empty
+    }
+
 getColumn :: Attribute -> Relation -> Column
 getColumn a r
   = columns r Map.! a
@@ -230,7 +264,7 @@ cardinality = cardinality' . columns
 
 showRelation :: Relation -> String
 showRelation rel
-  = List.intercalate "\n" rows3 ++ show (indices rel)
+  = List.intercalate "\n" rows3
   where
     cols1 :: [(Attribute,Column)]
       = toList rel
@@ -261,18 +295,7 @@ mkLine l m r
 -- * Algebra
 --------------------------------------------------------------------------------
 
-package
-  :: [Attribute]
-  -> Relation
-  -> [[Packet]]
-package as r
-  = foldr f e as
-  where
-    e
-      = replicate (cardinality r) []
-    f a x
-      = zipWith (:) (fromColumn (getColumn a r)) x
-
+-- FIXME: multiple output columns
 extend
   :: forall r a. (Dynamic r, DynamicFunction r a)
   => [Attribute]
@@ -288,7 +311,7 @@ extend as a f r
     newColumn
       = Column
       $ Array.listArray (0, cardinality r - 1)
-      $ fmap (applyDynamicFunction f :: [Packet] -> r) (package as r)
+      $ fmap (applyDynamicFunction f :: [Packet] -> r) (packetize as r)
 
 -- FIXME: express in terms of 'extend'
 filter
@@ -305,7 +328,7 @@ filter as p r
       where
         bitmap
           = Array.listArray (0, cardinality r - 1)
-          $ fmap (applyDynamicFunction p) (package as r)
+          $ fmap (applyDynamicFunction p) (packetize as r)
         filterC' (Column c)
           = Column (Array.select bitmap c)
     filterI
@@ -328,6 +351,98 @@ project as rel
               (Set.fromList (Map.keys (indices rel)))
             )
     }
+
+-- TODO: distinct
+data Aggregator
+  = COUNT | MIN | MAX | SUM | AVG
+
+-- TODO: aggregateWith
+-- TODO: mapReduce / foldMap
+aggregate
+  :: [Attribute]
+  -> [(Attribute, Aggregator)]
+  -> Relation
+  -> Relation
+aggregate as gs r
+  = toRel $ fmap post $ foldr f Map.empty (zip as' gs')
+  where
+    toRel :: Map.Map [Packet] [Packet] -> Relation
+    toRel
+      = unpacketize (as ++ map fst gs)
+      . map (\(x,y) -> x ++ y)
+      . Map.toList
+    as'
+      = packetize as r
+    gs'
+      = fmap (fmap (,1)) (packetize (map fst gs) r)
+    f :: ([Packet], [(Packet, Int)])
+      -> Map.Map [Packet] [(Packet, Int)]
+      -> Map.Map [Packet] [(Packet, Int)]
+    f (a,g) m
+      = Map.insertWith i a g m
+    i :: [(Packet, Int)] -> [(Packet, Int)] -> [(Packet, Int)]
+    i old new
+      = zipWith3 j (map snd gs) old new
+    j :: Aggregator -> (Packet, Int) -> (Packet, Int) -> (Packet, Int)
+    j COUNT (p, n) _
+      = (p, n + 1)
+    j MIN (Packet p, n) (Packet q, _)
+      | Int <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' `min` q' :: Int), n + 1)
+      | Integer <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' `min` q' :: Integer), n + 1)
+      | Double <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' `min` q' :: Double), n + 1)
+    j MAX (Packet p, n) (Packet q, _)
+      | Int <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' `max` q' :: Int), n + 1)
+      | Integer <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' `max` q' :: Integer), n + 1)
+      | Double <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' `max` q' :: Double), n + 1)
+    j SUM (Packet p, n) (Packet q, _)
+      | Int <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' + q' :: Int), n + 1)
+      | Integer <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' + q' :: Integer), n + 1)
+      | Double <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' + q' :: Double), n + 1)
+    j AVG (Packet p, n) (Packet q, _)
+      | Double <- typecase p
+      , Just p' <- cast p
+      , Just q' <- cast q
+        = (Packet (p' + q' :: Double), n + 1)
+    post :: [(Packet, Int)] -> [Packet]
+    post ps
+      = zipWith post' (map snd gs) ps
+      where
+        post' :: Aggregator -> (Packet, Int) -> Packet
+        post' COUNT (_, n)
+          = Packet n
+        post' AVG (Packet p, n)
+          | Double <- typecase p
+          , Just (p' :: Double) <- cast p
+            = Packet (p' / fromIntegral n)
+        post' _ (p, _)
+          = p
 
 --------------------------------------------------------------------------------
 -- * Errors
