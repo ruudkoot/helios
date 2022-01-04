@@ -10,23 +10,28 @@
 -- type-specialized Columns and Indices
 
 module Helios.Data.Relation.Dynamic
-( Attribute
+( module Helios.Data.Dynamic
+, Attribute
 , Relation
 , addIndex
 , relationR
 , attributes
 , arity
 , cardinality
-, extend
-, filter
+, select
 , project
+, union
+, difference
+, intersection
+, product
 , Aggregator(..)
 , aggregate
+, extend
 ) where
 
-import           Prelude hiding ( filter )
+import           Prelude hiding ( filter, product )
 
-import           Control.Arrow ((***))
+import           Control.Arrow ( (***) )
 
 import qualified Helios.Data.Array as Array
 import           Helios.Data.Dynamic
@@ -237,7 +242,7 @@ relationR header rows
   | otherwise
     = Relation (Map.fromList (zip header cols)) (Map.empty)
   where widthH = length header
-        widthR = rowWidth (Proxy :: Proxy r)
+        widthR = widthH -- FIXME: rowWidth (Proxy :: Proxy r)
         cols = map mkCol [0 .. widthR - 1]
         mkCol :: Int -> Column
         mkCol n = toColumn (map (rowIndex n) rows)
@@ -292,35 +297,22 @@ mkLine l m r
   = String.bracket2 l r . List.intercalate m . map (flip replicate '─')
 
 --------------------------------------------------------------------------------
--- * Algebra
+-- * Algebra: renaming
 --------------------------------------------------------------------------------
 
--- FIXME: multiple output columns
-extend
-  :: forall r a. (Dynamic r, DynamicFunction r a)
-  => [Attribute]
-  -> Attribute
-  -> a
-  -> Relation
-  -> Relation
-extend as a f r
-  = applyRelation extendC id r
-  where
-    extendC columns
-      = Map.insertWithKey errorExtendNotDisjoint a newColumn columns
-    newColumn
-      = Column
-      $ Array.listArray (0, cardinality r - 1)
-      $ fmap (applyDynamicFunction f :: [Packet] -> r) (packetize as r)
+
+--------------------------------------------------------------------------------
+-- * Algebra: selection
+--------------------------------------------------------------------------------
 
 -- FIXME: express in terms of 'extend'
-filter
+select
   :: DynamicFunction Bool a
   => [Attribute]
   -> a
   -> Relation
   -> Relation
-filter as p r
+select as p r
   = applyRelation filterC filterI r
   where
     filterC columns
@@ -334,6 +326,10 @@ filter as p r
     filterI
       -- FIXME: implement
       = id
+
+--------------------------------------------------------------------------------
+-- * Algebra: projection
+--------------------------------------------------------------------------------
 
 project
   :: [Attribute]
@@ -352,9 +348,41 @@ project as rel
             )
     }
 
+--------------------------------------------------------------------------------
+-- * Algebra: set operators
+--------------------------------------------------------------------------------
+
+union :: Relation -> Relation -> Relation
+union r s
+  = undefined
+
+difference :: Relation -> Relation -> Relation
+difference r s
+  = undefined
+
+intersection :: Relation -> Relation -> Relation
+intersection r s
+  = undefined
+
+product :: Relation -> Relation -> Relation
+product r s
+  = undefined
+
+--------------------------------------------------------------------------------
+-- * Algebra: joins
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- * Algebra: aggregation
+--------------------------------------------------------------------------------
+
 -- TODO: distinct
 data Aggregator
-  = COUNT | MIN | MAX | SUM | AVG
+  = COUNT
+  | MIN
+  | MAX
+  | SUM
+  | AVG -- MEAN
 
 -- TODO: aggregateWith
 -- TODO: mapReduce / foldMap
@@ -384,7 +412,7 @@ aggregate as gs r
     i old new
       = zipWith3 j (map snd gs) old new
     j :: Aggregator -> (Packet, Int) -> (Packet, Int) -> (Packet, Int)
-    j COUNT (p, n) _
+    j COUNT (p, _) (_, n)
       = (p, n + 1)
     j MIN (Packet p, n) (Packet q, _)
       | Int <- typecase p
@@ -425,7 +453,7 @@ aggregate as gs r
       , Just p' <- cast p
       , Just q' <- cast q
         = (Packet (p' + q' :: Double), n + 1)
-    j AVG (Packet p, n) (Packet q, _)
+    j AVG (Packet p, _) (Packet q, n)
       | Double <- typecase p
       , Just p' <- cast p
       , Just q' <- cast q
@@ -443,6 +471,28 @@ aggregate as gs r
             = Packet (p' / fromIntegral n)
         post' _ (p, _)
           = p
+
+--------------------------------------------------------------------------------
+-- * Extension
+--------------------------------------------------------------------------------
+
+-- FIXME: multiple output columns
+extend
+  :: forall r a. (Dynamic r, DynamicFunction r a)
+  => [Attribute]
+  -> Attribute
+  -> a
+  -> Relation
+  -> Relation
+extend as a f r
+  = applyRelation extendC id r
+  where
+    extendC columns
+      = Map.insertWithKey errorExtendNotDisjoint a newColumn columns
+    newColumn
+      = Column
+      $ Array.listArray (0, cardinality r - 1)
+      $ fmap (applyDynamicFunction f :: [Packet] -> r) (packetize as r)
 
 --------------------------------------------------------------------------------
 -- * Errors

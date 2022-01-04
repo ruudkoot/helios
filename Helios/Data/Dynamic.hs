@@ -53,7 +53,7 @@ instance Show Packet where
 --------------------------------------------------------------------------------
 
 class Row r where
-  rowWidth :: Proxy r -> Int
+  rowWidth :: r -> Int
   rowIndex :: Int -> r -> Packet
 
 instance (Dynamic t1, Dynamic t2) => Row (t1,t2) where
@@ -83,6 +83,10 @@ instance (Dynamic t1, Dynamic t2, Dynamic t3, Dynamic t4, Dynamic t5)
   rowIndex 2 (_,_,x,_,_) = Packet x
   rowIndex 3 (_,_,_,x,_) = Packet x
   rowIndex 4 (_,_,_,_,x) = Packet x
+
+instance (Dynamic t) => Row [t] where
+  rowWidth xs = length xs
+  rowIndex n xs = Packet (xs !! n)
 
 --------------------------------------------------------------------------------
 -- Dynamic function

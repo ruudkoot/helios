@@ -1,14 +1,14 @@
 module Helios.Data.String
-  ( module Data.List
-  , module Data.String
-  , bracket1
-  , bracket2
-  , function
-  , padLeft
-  , padRight
-  , quotes
-  , yesNo
-  ) where
+( module Data.List
+, module Data.String
+, bracket1
+, bracket2
+, function
+, padLeft
+, padRight
+, quotes
+, yesNo
+) where
 
 import Data.List ( intersperse )
 import Data.String
