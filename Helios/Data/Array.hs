@@ -8,7 +8,7 @@ import qualified Prelude
 import           Prelude
   hiding ( sum )
 
-import           Data.Array
+import           Data.Array -- FIXME: Data.Array.IArray
 
 -- | Used by Relation.Dynamic.filter - otherwise useless?
 select :: Array Int Bool -> Array Int e -> Array Int e
