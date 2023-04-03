@@ -15,6 +15,8 @@ module Helios.Search.Graph
 , Path(..)
 , treeSearch
 , makeNode, expand -- FIXME
+, breadthFirstSearch
+, depthFirstSearch
 ) where
 
 import Helios.Data.Queue
@@ -72,10 +74,10 @@ solution node
 treeSearch
   :: forall queue action state
   .  Queue queue (Node action state)
-  => Problem action state
-  -> queue (Node action state)
+  => queue (Node action state)
+  -> Problem action state
   -> [Path action state]
-treeSearch problem fringe
+treeSearch fringe problem
   | isEmpty fringe
     = treeSearch' (insert (makeNode (initialState problem)) fringe)
   | otherwise
@@ -112,3 +114,17 @@ expand problem node
         , pathCost = pathCost node + stepCost problem (state node) action result
         , depth = depth node + 1
         }
+
+breadthFirstSearch
+  :: forall action state
+  .  Problem action state
+  -> [Path action state]
+breadthFirstSearch
+  = treeSearch (empty :: FIFO (Node action state))
+
+depthFirstSearch
+  :: forall action state
+  .  Problem action state
+  -> [Path action state]
+depthFirstSearch
+  = treeSearch (empty :: LIFO (Node action state))

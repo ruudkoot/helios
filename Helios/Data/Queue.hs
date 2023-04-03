@@ -12,10 +12,12 @@ module Helios.Data.Queue
 
 class Queue f a where
   empty :: f a
+  first :: f a -> a
+  first = fst . removeFirst
+  removeFirst :: f a -> (a, f a)
   isEmpty :: f a -> Bool
   insert :: a -> f a -> f a
   insertAll :: [a] -> f a -> f a
-  removeFirst :: f a -> (a, f a)
 
 --------------------------------------------------------------------------------
 -- * LIFO
@@ -30,12 +32,12 @@ instance Queue LIFO a where
     = LIFO []
   isEmpty (LIFO xs)
     = null xs
+  removeFirst (LIFO (x:xs))
+    = (x, LIFO xs)
   insert x (LIFO xs)
     = LIFO (x : xs)
   insertAll ys (LIFO xs)
     = LIFO (ys ++ xs)
-  removeFirst (LIFO (x:xs))
-    = (x, LIFO xs)
 
 --------------------------------------------------------------------------------
 -- * FIFO

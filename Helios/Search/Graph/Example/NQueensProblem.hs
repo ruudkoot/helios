@@ -58,11 +58,10 @@ problem n
         = \ _ _ _ -> 0 -- FIXME: Nothing
     }
 
--- FIXME: DFS
 solve :: Int -> [[Int]]
 solve n
   = map (queens . state . head . unPath)
-  $ treeSearch (problem n) (empty :: LIFO node)
+  $ depthFirstSearch (problem n)
 
 main :: IO ()
 main = do
