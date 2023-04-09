@@ -4,13 +4,19 @@ module Helios.Finance.Instrument.Option
 , Payoff(..)
 , Option(..)
 , theta
+, main
 ) where
 
 import           Helios
-import qualified Helios.Data.BinomialTree as BT
+import           Helios.Control.Monad
+import qualified Helios.Control.Random      as Random
+import qualified Helios.Data.BinomialTree   as BT
+import qualified Helios.Data.List           as List
 import           Helios.Finance.Instrument
 import           Helios.Finance.Market
 import           Helios.Finance.Price
+import           Helios.Math.Statistics
+import qualified Helios.Text.CSV            as CSV
 
 --------------------------------------------------------------------------------
 -- Instrument
@@ -36,32 +42,32 @@ data Option
   deriving (Eq, Ord, Show)
 
 instance Instrument Option where
-  price = pricer def
+  price = pricerBT def
 
 --------------------------------------------------------------------------------
 -- Binomial tree pricer
 --------------------------------------------------------------------------------
 
-data Config
-  = Config
-    { steps :: Int
+data ConfigBT
+  = ConfigBT
+    { bt_steps :: Int
     }
   deriving (Show)
 
-instance Default Config where
-  def = Config { steps = 252 }
+instance Default ConfigBT where
+  def = ConfigBT { bt_steps = 252 }
 
-pricer :: Config -> Market -> Option -> Taylor
-pricer Config{..} Market{..} Option{..}
+pricerBT :: ConfigBT -> Market -> Option -> Taylor
+pricerBT ConfigBT{..} Market{..} Option{..}
   = let
-      spots   = BT.take (steps + 1) (BT.unfold (u *) (v *) spot)
+      spots   = BT.take (bt_steps + 1) (BT.unfold (u *) (v *) spot)
       payoffs = BT.map (payoff' payoff strike) spots
       values  = BT.backward (value' exercise p' df) payoffs
       greeks  = iterate (\g -> BT.forward derivative (BT.zip g spots)) values
     in
       Taylor (map BT.head greeks)
   where
-    dt = expiry / fromIntegral steps
+    dt = expiry / fromIntegral bt_steps
     u  = 1 + vol * sqrt dt
     v  = 1 - vol * sqrt dt
     p' = 0.5 + rate * sqrt dt / (2 * vol)
@@ -79,12 +85,47 @@ derivative :: a -> (Double, Double) -> (Double, Double) -> Double
 derivative _ (v1,s1) (v2,s2) = (v1 - v2) / (s1 - s2)
 
 --------------------------------------------------------------------------------
+-- Monte Carlo pricer
+--------------------------------------------------------------------------------
+
+data ConfigMC
+  = ConfigMC
+    { mc_steps :: Int
+    , mc_paths :: Int
+    }
+  deriving (Show)
+
+instance Default ConfigMC where
+  def = ConfigMC { mc_steps = 252, mc_paths = 8192 }
+
+-- FIXME: fix random seed
+pricerMT :: ConfigMC -> Market -> Option -> IO Double
+pricerMT ConfigMC{..} Market{..} Option{..} = do
+  let dt = expiry / fromIntegral mc_steps
+  paths <- replicateM mc_paths $
+    iterateForM mc_steps spot $ \spot' -> do
+      w <- Random.irwinHall
+      return (spot' * (1 + rate * dt + vol * sqrt dt * w))
+  let payoffs = map (\path -> payoff' payoff strike (last path)) paths
+  return (exp (-rate * expiry) * mean payoffs)
+
+--------------------------------------------------------------------------------
 -- Risk
 --------------------------------------------------------------------------------
 
 -- FIXME: move pricing date, not expiry date
 theta :: Market -> Option -> Double
 theta market option
-  = value (pricer def market option') - value (pricer def market option)
+  = value (price market option') - value (price market option)
   where
     option' = option { expiry = expiry option - (1/252) }
+
+--------------------------------------------------------------------------------
+-- Main
+--------------------------------------------------------------------------------
+
+main :: IO ()
+main = do
+  let market = Market 0.05 100 0.20
+  let option = Option European Call 100 1
+  void $ repeatM $ pricerMT def market option >>= print
