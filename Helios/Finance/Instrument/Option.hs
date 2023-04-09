@@ -3,13 +3,14 @@ module Helios.Finance.Instrument.Option
 ( Exercise(..)
 , Payoff(..)
 , Option(..)
-, value
-, main
+, theta
 ) where
 
 import           Helios
 import qualified Helios.Data.BinomialTree as BT
+import           Helios.Finance.Instrument
 import           Helios.Finance.Market
+import           Helios.Finance.Price
 
 --------------------------------------------------------------------------------
 -- Instrument
@@ -18,12 +19,12 @@ import           Helios.Finance.Market
 data Exercise
   = European
   | American
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data Payoff
   = Call
   | Put
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data Option
   = Option
@@ -32,7 +33,10 @@ data Option
     , strike :: Double
     , expiry :: Double
     }
-  deriving (Show)
+  deriving (Eq, Ord, Show)
+
+instance Instrument Option where
+  price = pricer def
 
 --------------------------------------------------------------------------------
 -- Binomial tree pricer
@@ -47,22 +51,15 @@ data Config
 instance Default Config where
   def = Config { steps = 252 }
 
-data Value
-  = Value
-    { value :: Double
-    , delta :: Double
-    }
-  deriving (Show)
-
-pricer :: Config -> Market -> Option -> Value
+pricer :: Config -> Market -> Option -> Taylor
 pricer Config{..} Market{..} Option{..}
   = let
       spots   = BT.take (steps + 1) (BT.unfold (u *) (v *) spot)
       payoffs = BT.map (payoff' payoff strike) spots
       values  = BT.backward (value' exercise p' df) payoffs
-      deltas  = BT.forward delta' (BT.zip values spots)
+      greeks  = iterate (\g -> BT.forward derivative (BT.zip g spots)) values
     in
-      Value { value = BT.head values, delta = BT.head deltas }
+      Taylor (map BT.head greeks)
   where
     dt = expiry / fromIntegral steps
     u  = 1 + vol * sqrt dt
@@ -78,17 +75,16 @@ value' :: Exercise -> Double -> Double -> Double -> Double -> Double -> Double
 value' European p' df _  p1 p2 =         df * (p' * p1 + (1 - p') * p2)
 value' American p' df p0 p1 p2 = max p0 (df * (p' * p1 + (1 - p') * p2))
 
-delta' :: a -> (Double, Double) -> (Double, Double) -> Double
-delta' _ (v1,s1) (v2,s2) = (v1 - v2) / (s1 - s2)
+derivative :: a -> (Double, Double) -> (Double, Double) -> Double
+derivative _ (v1,s1) (v2,s2) = (v1 - v2) / (s1 - s2)
 
 --------------------------------------------------------------------------------
--- Main
+-- Risk
 --------------------------------------------------------------------------------
 
-main :: IO ()
-main = do
-  let mkt = Market 0.05 100 0.20
-  print $ pricer def mkt (Option European Call 100 1)
-  print $ pricer def mkt (Option European Put  100 1)
-  print $ pricer def mkt (Option American Call 100 1)
-  print $ pricer def mkt (Option American Put  100 1)
+-- FIXME: move pricing date, not expiry date
+theta :: Market -> Option -> Double
+theta market option
+  = value (pricer def market option') - value (pricer def market option)
+  where
+    option' = option { expiry = expiry option - (1/252) }

@@ -84,6 +84,31 @@ instance (Dynamic t1, Dynamic t2, Dynamic t3, Dynamic t4, Dynamic t5)
   rowIndex 3 (_,_,_,x,_) = Packet x
   rowIndex 4 (_,_,_,_,x) = Packet x
 
+instance ( Dynamic t1, Dynamic t2, Dynamic t3, Dynamic t4, Dynamic t5
+         , Dynamic t6
+         )
+            => Row (t1,t2,t3,t4,t5,t6) where
+  rowWidth _ = 6
+  rowIndex 0 (x,_,_,_,_,_) = Packet x
+  rowIndex 1 (_,x,_,_,_,_) = Packet x
+  rowIndex 2 (_,_,x,_,_,_) = Packet x
+  rowIndex 3 (_,_,_,x,_,_) = Packet x
+  rowIndex 4 (_,_,_,_,x,_) = Packet x
+  rowIndex 5 (_,_,_,_,_,x) = Packet x
+
+instance ( Dynamic t1, Dynamic t2, Dynamic t3, Dynamic t4, Dynamic t5, Dynamic t6
+         , Dynamic t7
+         )
+            => Row (t1,t2,t3,t4,t5,t6,t7) where
+  rowWidth _ = 7
+  rowIndex 0 (x,_,_,_,_,_,_) = Packet x
+  rowIndex 1 (_,x,_,_,_,_,_) = Packet x
+  rowIndex 2 (_,_,x,_,_,_,_) = Packet x
+  rowIndex 3 (_,_,_,x,_,_,_) = Packet x
+  rowIndex 4 (_,_,_,_,x,_,_) = Packet x
+  rowIndex 5 (_,_,_,_,_,x,_) = Packet x
+  rowIndex 6 (_,_,_,_,_,_,x) = Packet x
+
 instance (Dynamic t) => Row [t] where
   rowWidth xs = length xs
   rowIndex n xs = Packet (xs !! n)
