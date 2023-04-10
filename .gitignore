@@ -1,5 +1,2 @@
 *.hi
 *.o
-*.sublime-*
-Main*
-!Main.hs
