@@ -102,10 +102,15 @@ instance Default ConfigMC where
 pricerMT :: ConfigMC -> Market -> Option -> IO Double
 pricerMT ConfigMC{..} Market{..} Option{..} = do
   let dt = expiry / fromIntegral mc_steps
-  paths <- replicateM mc_paths $
-    iterateForM mc_steps spot $ \spot' -> do
-      w <- Random.irwinHall
-      return (spot' * (1 + rate * dt + vol * sqrt dt * w))
+  paths <- fmap (concatMap List.unzipL) $
+    replicateM ((mc_paths + 1) `div` 2) $
+      iterateForM mc_steps (spot, spot) $
+        \(spot1, spot2) -> do
+          w <- Random.irwinHall
+          return
+            ( spot1 * (1 + rate * dt + vol * sqrt dt *        w)
+            , spot2 * (1 + rate * dt + vol * sqrt dt * negate w)
+            )
   let payoffs = map (\path -> payoff' payoff strike (last path)) paths
   return (exp (-rate * expiry) * mean payoffs)
 
