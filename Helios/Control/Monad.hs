@@ -1,8 +1,11 @@
+{-# LANGUAGE TupleSections #-}
 module Helios.Control.Monad
 ( module Control.Monad
 , iterateM
 , iterateForM
 , repeatM
+, mapAccumM, mapAccumM_
+, forAccumM, forAccumM_
 ) where
 
 import Control.Monad
@@ -26,3 +29,24 @@ repeatM k = do
   x <- k
   xs <- repeatM k
   return (x:xs)
+
+-- base-4.18
+mapAccumM :: (Monad m) => (s -> a -> m (s, b)) -> s -> [a] -> m (s, [b])
+mapAccumM _ s [] =
+  return (s, [])
+mapAccumM f s (x:xs) = do
+  (s', y) <- f s x
+  (s'', ys) <- mapAccumM f s' xs
+  return (s'', y : ys)
+
+mapAccumM_ :: (Monad m) => (s -> a -> m s) -> s -> [a] -> m s
+mapAccumM_ f s xs
+  = fst <$> mapAccumM (\s x -> (,()) <$> f s x) s xs
+
+forAccumM :: (Monad m) => s -> [a] -> (s -> a -> m (s, b)) -> m (s, [b])
+forAccumM s xs f
+  = mapAccumM f s xs
+
+forAccumM_ :: (Monad m) => s -> [a] -> (s -> a -> m s) -> m s
+forAccumM_ s xs f
+  = mapAccumM_ f s xs

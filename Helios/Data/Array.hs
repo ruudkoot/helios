@@ -2,6 +2,7 @@ module Helios.Data.Array
 ( module Data.Array
 , select
 , sum
+, exchange
 ) where
 
 import qualified Prelude
@@ -18,3 +19,7 @@ select bitmap arr
     xs = map snd (filter fst (zip (elems bitmap) (elems arr)))
 
 sum = Prelude.sum . elems
+
+exchange :: Int -> Int -> Array Int e -> Array Int e
+exchange i j arr
+  = arr // [(i, arr ! j), (j, arr ! i)]
