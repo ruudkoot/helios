@@ -2,6 +2,7 @@ module Helios.Data.List
 ( module Data.List
 , module Data.List.Extra
 , IsList(..)
+, (+:)
 , isSingleton
 , slide
 , unzipL
@@ -20,9 +21,20 @@ import Data.List
 import Data.List.Extra
 import GHC.Exts ( IsList(..) )
 
+--------------------------------------------------------------------------------
+--
+--------------------------------------------------------------------------------
+
+(+:) :: [a] -> a -> [a]
+xs +: x = xs ++ [x]
+
 isSingleton :: [a] -> Bool
 isSingleton [_] = True
 isSingleton _   = False
+
+--------------------------------------------------------------------------------
+--
+--------------------------------------------------------------------------------
 
 slide :: (a -> a -> b) -> [a] -> [b]
 slide f (x1:x2:[]) = [f x1 x2]

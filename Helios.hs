@@ -1,9 +1,12 @@
 {-# LANGUAGE OverloadedLists #-}
 module Helios
 ( module Data.Default
+, Empty
 ) where
 
 import Data.Default
+
+data Empty
 
 -- import Helios.Class.Space as Space
 -- import Helios.Data.Vector as Vector
