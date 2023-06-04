@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedLists #-}
 module Helios
 ( module Data.Default
+, (***)
 , Empty
 ) where
 
+import Control.Arrow ((***))
 import Data.Default
 
 data Empty

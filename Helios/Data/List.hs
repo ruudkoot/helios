@@ -4,6 +4,8 @@ module Helios.Data.List
 , IsList(..)
 , (+:)
 , isSingleton
+, sortNub
+, timesN
 , slide
 , unzipL
 , padTo
@@ -19,6 +21,7 @@ module Helios.Data.List
 
 import Data.List
 import Data.List.Extra
+import qualified Data.Set as Set
 import GHC.Exts ( IsList(..) )
 
 --------------------------------------------------------------------------------
@@ -31,6 +34,22 @@ xs +: x = xs ++ [x]
 isSingleton :: [a] -> Bool
 isSingleton [_] = True
 isSingleton _   = False
+
+sortNub
+  :: (Ord a) => [a] -> [a]
+sortNub
+  = Set.toList . Set.fromList
+
+--------------------------------------------------------------------------------
+--
+--------------------------------------------------------------------------------
+
+timesN
+  :: Int -> [a] -> [[a]]
+timesN 0 _
+  = [[]]
+timesN n xs
+  = [ y : ys | y <- xs, ys <- timesN (n - 1) xs]
 
 --------------------------------------------------------------------------------
 --
