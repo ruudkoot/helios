@@ -22,7 +22,7 @@ import qualified Helios.Data.Map as Map
 data Term c v
   = Var v
   | Con c [Term c v]
-  deriving (Show)
+  deriving (Eq, Show)
 
 mapConT
   :: (c -> c')
@@ -47,7 +47,7 @@ data Formula q s r c v
   = Quantifier q v (Formula q s r c v)
   | Symbol s [Formula q s r c v]
   | Relation r [Term c v]
-  deriving (Show)
+  deriving (Eq, Show)
 
 mapConF
   :: (c -> c')
@@ -95,7 +95,7 @@ cons f
 data Quantifier
   = FORALL
   | EXISTS
-  deriving (Show)
+  deriving (Eq, Show)
 
 invertQuantifier :: Quantifier -> Quantifier
 invertQuantifier FORALL
@@ -271,10 +271,41 @@ toConjunctiveNormalForm
     toConjunctiveNormalForm'
       :: Formula q Symbol r c v
       -> Reduced (Formula q Symbol r c v)
+    toConjunctiveNormalForm' (Symbol OR [Symbol AND [f1, f2], f3])
+      = Reduced $ Symbol AND [Symbol OR [f1, f2], Symbol OR [f1, f3]]
     toConjunctiveNormalForm' (Symbol OR [f1, Symbol AND [f2, f3]])
       = Reduced $ Symbol AND [Symbol OR [f1, f2], Symbol OR [f1, f3]]
     toConjunctiveNormalForm' f
       = Irreducable f
+
+--------------------------------------------------------------------------------
+-- Clause sets
+--------------------------------------------------------------------------------
+
+data Literal r c v
+  = Positive r [Term c v]
+  | Negative r [Term c v]
+  deriving (Eq, Show)
+
+-- Take a quantifier-free formula in conjunctive normal form and represent
+-- it as a clause set.
+toClauseSet
+  :: Formula q Symbol r c v
+  -> [[Literal r c v]]
+toClauseSet (Relation r ts)
+  = [[Positive r ts]]
+toClauseSet (Symbol NOT [Relation r ts])
+  = [[Negative r ts]]
+toClauseSet (Symbol OR [f1, f2])
+  = [c1 ++ c2]
+  where
+    [c1] = toClauseSet f1
+    [c2] = toClauseSet f2
+toClauseSet (Symbol AND [f1, f2])
+  = c1 ++ c2
+  where
+    c1 = toClauseSet f1
+    c2 = toClauseSet f2
 
 --------------------------------------------------------------------------------
 -- Skolemization
@@ -433,9 +464,37 @@ quantifierFreeLines
   => Formula Quantifier s r c v
   -> [Formula Quantifier s r (Maybe c) v]
 quantifierFreeLines f
-  = [ substFormula (Map.fromList (zip vs cs)) (mapConF Just f)
-    | cs <- timesN (length vs) (herbrandUniverse cs)
+  = [ substFormula (Map.fromList (zip vs ts)) f'
+    | ts <- timesN (length vs) (herbrandUniverse cs)
     ]
   where
     vs = vars f
     cs = addArbitraryConstant (cons f)
+    f' = mapConF Just f
+
+-- Paul C. Gilmore (1960). A proof method for quantification theory.
+testFormula4
+  = Symbol NOT -- refute
+    [ Quantifier EXISTS 'x'
+    $ Quantifier EXISTS 'y'
+    $ Quantifier FORALL 'z'
+    $ Symbol AND
+      [ Symbol IMPL
+        [ Relation 'F' [Var 'x', Var 'y']
+        , Symbol AND
+          [ Relation 'F' [Var 'y', Var 'z']
+          , Relation 'F' [Var 'z', Var 'z']
+          ]
+        ]
+      , Symbol IMPL
+        [ Symbol AND
+          [ Relation 'F' [Var 'x', Var 'y']
+          , Relation 'G' [Var 'x', Var 'y']
+          ]
+        , Symbol AND
+          [ Relation 'G' [Var 'x', Var 'z']
+          , Relation 'G' [Var 'z', Var 'z']
+          ]
+        ]
+      ]
+    ]
