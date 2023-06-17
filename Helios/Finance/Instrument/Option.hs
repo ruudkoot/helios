@@ -22,15 +22,25 @@ import qualified Helios.Text.CSV            as CSV
 -- Instrument
 --------------------------------------------------------------------------------
 
+-- TODO: Bermudan
 data Exercise
   = European
   | American
   deriving (Eq, Ord, Show)
 
+-- TODO: Binary/Digital
 data Payoff
   = Call
   | Put
+  | BinaryCall
+  | BinaryPut
   deriving (Eq, Ord, Show)
+
+payoffFunction :: Payoff -> Double -> Double -> Double
+payoffFunction Call       strike spot = max 0 (spot - strike)
+payoffFunction Put        strike spot = max 0 (strike - spot)
+payoffFunction BinaryCall strike spot = if strike >= spot then 1.0 else 0.0
+payoffFunction BinaryPut  strike spot = if strike < spot then 1.0 else 0.0
 
 data Option
   = Option
@@ -61,8 +71,8 @@ pricerBT :: ConfigBT -> Market -> Option -> Taylor
 pricerBT ConfigBT{..} Market{..} Option{..}
   = let
       spots   = BT.take (bt_steps + 1) (BT.unfold (u *) (v *) spot)
-      payoffs = BT.map (payoff' payoff strike) spots
-      values  = BT.backward (value' exercise p' df) payoffs
+      payoffs = BT.map (payoffFunction payoff strike) spots
+      values  = BT.backward (value exercise p' df) payoffs
       greeks  = iterate (\g -> BT.forward derivative (BT.zip g spots)) values
     in
       Taylor (map BT.head greeks)
@@ -73,13 +83,9 @@ pricerBT ConfigBT{..} Market{..} Option{..}
     p' = 0.5 + rate * sqrt dt / (2 * vol)
     df = 1 / (1 + rate * dt)
 
-payoff' :: Payoff -> Double -> Double -> Double
-payoff' Call strike spot = max 0 (spot - strike)
-payoff' Put  strike spot = max 0 (strike - spot)
-
-value' :: Exercise -> Double -> Double -> Double -> Double -> Double -> Double
-value' European p' df _  p1 p2 =         df * (p' * p1 + (1 - p') * p2)
-value' American p' df p0 p1 p2 = max p0 (df * (p' * p1 + (1 - p') * p2))
+value :: Exercise -> Double -> Double -> Double -> Double -> Double -> Double
+value European p' df _  p1 p2 =         df * (p' * p1 + (1 - p') * p2)
+value American p' df p0 p1 p2 = max p0 (df * (p' * p1 + (1 - p') * p2))
 
 derivative :: a -> (Double, Double) -> (Double, Double) -> Double
 derivative _ (v1,s1) (v2,s2) = (v1 - v2) / (s1 - s2)
@@ -99,6 +105,7 @@ instance Default ConfigMC where
   def = ConfigMC { mc_steps = 252, mc_paths = 8192 }
 
 -- FIXME: fix random seed
+-- FIXME: European only
 pricerMT :: ConfigMC -> Market -> Option -> IO Double
 pricerMT ConfigMC{..} Market{..} Option{..} = do
   let dt = expiry / fromIntegral mc_steps
@@ -111,7 +118,7 @@ pricerMT ConfigMC{..} Market{..} Option{..} = do
             ( spot1 * (1 + rate * dt + vol * sqrt dt *        w)
             , spot2 * (1 + rate * dt + vol * sqrt dt * negate w)
             )
-  let payoffs = map (\path -> payoff' payoff strike (last path)) paths
+  let payoffs = map (\path -> payoffFunction payoff strike (last path)) paths
   return (exp (-rate * expiry) * mean payoffs)
 
 --------------------------------------------------------------------------------
@@ -121,7 +128,7 @@ pricerMT ConfigMC{..} Market{..} Option{..} = do
 -- FIXME: move pricing date, not expiry date
 theta :: Market -> Option -> Double
 theta market option
-  = value (price market option') - value (price market option)
+  = presentValue (price market option') - presentValue (price market option)
   where
     option' = option { expiry = expiry option - (1/252) }
 
