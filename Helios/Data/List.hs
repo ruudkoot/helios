@@ -5,6 +5,7 @@ module Helios.Data.List
 , isSingleton
 , slide
 , unzipL
+, zipListWith
 , padTo
 , pad
 , dropAt
@@ -30,6 +31,9 @@ slide f (x1:x2:xs) = f x1 x2 : slide f (x2:xs)
 
 unzipL :: [(a,a)] -> [[a]]
 unzipL xs = let (x,y) = unzip xs in [x,y]
+
+zipListWith :: ([a] -> b) -> [[a]] -> [b]
+zipListWith f = map f . transpose
 
 --------------------------------------------------------------------------------
 -- Padding

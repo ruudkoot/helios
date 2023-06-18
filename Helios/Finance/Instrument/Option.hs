@@ -3,6 +3,13 @@ module Helios.Finance.Instrument.Option
 ( Exercise(..)
 , Payoff(..)
 , Option(..)
+, bullSpread
+, bearSpread
+, straddle
+, strangle
+, riskReversal
+, butterfly
+, condor
 , theta
 , main
 ) where
@@ -14,6 +21,7 @@ import qualified Helios.Data.BinomialTree   as BT
 import qualified Helios.Data.List           as List
 import           Helios.Finance.Instrument
 import           Helios.Finance.Market
+import           Helios.Finance.Portfolio
 import           Helios.Finance.Price
 import           Helios.Math.Statistics
 import qualified Helios.Text.CSV            as CSV
@@ -53,6 +61,61 @@ data Option
 
 instance Instrument Option where
   price = pricerBT def
+
+--------------------------------------------------------------------------------
+-- Strategy
+--------------------------------------------------------------------------------
+
+bullSpread
+  :: Double -> Double -> Double -> Portfolio
+bullSpread strike1 strike2 expiry
+  = long (Option European Call strike1 expiry)
+    <>
+    short (Option European Call strike2 expiry)
+
+bearSpread
+  :: Double -> Double -> Double -> Portfolio
+bearSpread strike1 strike2 expiry
+  = short (Option European Put strike1 expiry)
+    <>
+    long (Option European Put strike2 expiry)
+
+straddle
+  :: Double -> Double -> Portfolio
+straddle strike expiry
+  = long (Option European Call strike expiry)
+    <>
+    long (Option European Put strike expiry)
+
+strangle
+  :: Double -> Double -> Double -> Portfolio
+strangle strike1 strike2 expiry
+  = long (Option European Call strike1 expiry)
+    <>
+    long (Option European Put strike2 expiry)
+
+riskReversal
+  :: Double -> Double -> Double -> Portfolio
+riskReversal strike1 strike2 expiry
+  = long (Option European Call strike1 expiry)
+    <>
+    short (Option European Put strike2 expiry)
+
+butterfly
+  :: Double -> Double -> Double -> Double -> Portfolio
+butterfly strike1 strike2 strike3 expiry
+  = condor strike1 strike2 strike2 strike3 expiry
+
+condor
+  :: Double -> Double -> Double -> Double -> Double -> Portfolio
+condor strike1 strike2 strike3 strike4 expiry
+  = long (Option European Call strike1 expiry)
+    <>
+    short (Option European Call strike2 expiry)
+    <>
+    short (Option European Call strike3 expiry)
+    <>
+    long (Option European Call strike4 expiry)
 
 --------------------------------------------------------------------------------
 -- Binomial tree pricer

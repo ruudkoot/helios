@@ -17,5 +17,8 @@ data Instrument'
 
 deriving instance Show Instrument'
 
+instance Instrument Instrument' where
+  price market (Instrument' i) = price market i
+
 instrument' :: Instrument i => i -> Instrument'
 instrument' = Instrument'
