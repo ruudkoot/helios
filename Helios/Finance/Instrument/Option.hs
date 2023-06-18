@@ -176,7 +176,7 @@ pricerMT ConfigMC{..} Market{..} Option{..} = do
     replicateM ((mc_paths + 1) `div` 2) $
       iterateForM mc_steps (spot, spot) $
         \(spot1, spot2) -> do
-          w <- Random.irwinHall
+          w <- Random.standardNormal
           return
             ( spot1 * (1 + rate * dt + vol * sqrt dt *        w)
             , spot2 * (1 + rate * dt + vol * sqrt dt * negate w)
