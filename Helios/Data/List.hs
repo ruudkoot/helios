@@ -6,6 +6,7 @@ module Helios.Data.List
 , slide
 , unzipL
 , zipListWith
+, mapWithPreceding
 , padTo
 , pad
 , dropAt
@@ -34,6 +35,18 @@ unzipL xs = let (x,y) = unzip xs in [x,y]
 
 zipListWith :: ([a] -> b) -> [[a]] -> [b]
 zipListWith f = map f . transpose
+
+mapWithPreceding
+  :: forall a b. ([b] -> a -> b) -> [a] -> [b]
+mapWithPreceding f
+  = mapWithPreceding' []
+  where
+    mapWithPreceding'
+      :: [b] -> [a] -> [b]
+    mapWithPreceding' ys []
+      = []
+    mapWithPreceding' ys (x:xs)
+      = let y = f ys x in y : mapWithPreceding' (ys ++ [y]) xs
 
 --------------------------------------------------------------------------------
 -- Padding
