@@ -1,7 +1,15 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Strict #-}
-{-# LANGUAGE StrictData #-}
+-- IMPLEMENTATION:
+-- * Cholesky decomposition
+-- * Copulas
+-- * Basket CDS
+-- * Sobel numbers
+-- * Correlation matrix
+-- * KERNEL DENSITY ESTIMATION
+-- ANALYSIS:
+-- * Sensitivity (recovery rate, correlations, copula, ..)
+-- * Convergence (pseudo-random vs quasi-random)
 module BasketCDS where
 
 import           Control.Monad
@@ -29,12 +37,22 @@ data RateCurve
   = RateCurve { rc_pillars :: Map Tenor Double }
   deriving (Eq, Show)
 
--- FIXME: we do not interpolate at all
--- FIXME: log interpolation instead of linear?
 df :: RateCurve -> Tenor -> Double
-df RateCurve{..} tenor
-  = fromMaybe (error "df: tenor does not fall on a pillar")
-  $ Map.lookup tenor rc_pillars
+df rc@RateCurve{..} tenor
+  = fromMaybe (uncurry logLinearInterpolation df2) (Map.lookup tenor rc_pillars)
+  where
+    logLinearInterpolation (t_below, df_below) (t_above, df_above)
+      = exp
+        (
+          (yearDiff t_below tenor / yearDiff t_below t_above) * log df_above
+            +
+          (yearDiff tenor t_above / yearDiff t_below t_above) * log df_below
+        )
+    df2
+      = ((t_below, df rc t_below), (t_above, df rc t_above))
+      where
+        t_below = maximum (filter (< tenor) (Map.keys rc_pillars))
+        t_above = minimum (filter (> tenor) (Map.keys rc_pillars))
 
 -- FIXME: rates instead of discount factors
 rcUSD :: RateCurve
@@ -93,13 +111,27 @@ rcKannan3
     ]
 rcKannan4
   = rcKannan3
+rcKannan5
+  = RateCurve $ Map.fromList
+    [ (Y 0, 1.00)
+    , (Y 1, 0.97)
+    , (Y 2, 0.94)
+    , (Y 3, 0.92)
+    , (Y 5, 0.86)
+    , (Y 7, 0.81)
+    ]
+rcKannan6
+  = rcKannan5
 
 --------------------------------------------------------------------------------
 -- Single-name credit spreads
 --------------------------------------------------------------------------------
 
 data CreditSpread
-  = CreditSpread { cs_pillars :: Map Tenor Double }
+  = CreditSpread
+    { recoveryRate :: Double
+    , cs_pillars :: Map Tenor Double
+    }
   deriving (Show)
 
 pillars :: CreditSpread -> [Tenor]
@@ -107,97 +139,179 @@ pillars CreditSpread{..}
   = Map.keys cs_pillars
 
 creditSpread :: CreditSpread -> Tenor -> Double
-creditSpread CreditSpread{..} tenor
-  = fromMaybe (error "creditSpread: tenor does not fall on a pillar")
-  $ Map.lookup tenor cs_pillars
+creditSpread cs@CreditSpread{..} tenor
+  = fromMaybe (uncurry linearInterpolation cs2) $ Map.lookup tenor cs_pillars
+  where
+    linearInterpolation (t_below, cs_below) (t_above, cs_above)
+      = (yearDiff t_below tenor / yearDiff t_below t_above) * cs_above
+          +
+        (yearDiff tenor t_above / yearDiff t_below t_above) * cs_below
+    cs2
+      = ( (t_below, creditSpread cs t_below)
+        , (t_above, creditSpread cs t_above)
+        )
+      where
+        t_below = maximum (filter (< tenor) (Map.keys cs_pillars))
+        t_above = minimum (filter (> tenor) (Map.keys cs_pillars))
 
-deltaT :: CreditSpread -> Tenor -> Double
-deltaT cs tenor
+deltaT :: [Tenor] -> Tenor -> Double
+deltaT ps tenor
   | n == 0
     = toYear tenor
   | otherwise
-    = toYear tenor - toYear (pillars cs !! (n - 1))
+    = toYear tenor - toYear (ps !! (n - 1))
   where
     n = fromMaybe (error $ "deltaT: not a pillar " ++ show tenor)
-      $ findIndex (== tenor) (pillars cs)
+      $ findIndex (== tenor) ps
 
 csHSBC, csBNPParibas, csSantander, csUBS, csDeutscheBank
   :: CreditSpread
 csHSBC
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.003284)
-    , (Y 2.0, 0.003907)
-    , (Y 3.0, 0.004408)
-    , (Y 4.0, 0.004980)
-    , (Y 5.0, 0.005575)
-    ]
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.003284)
+          , (Y 2.0, 0.003907)
+          , (Y 3.0, 0.004408)
+          , (Y 4.0, 0.004980)
+          , (Y 5.0, 0.005575)
+          ]
+    }
 csBNPParibas
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.003500)
-    , (Y 2.0, 0.004348)
-    , (Y 3.0, 0.005080)
-    , (Y 4.0, 0.005760)
-    , (Y 5.0, 0.006418)
-    ]
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.003500)
+          , (Y 2.0, 0.004348)
+          , (Y 3.0, 0.005080)
+          , (Y 4.0, 0.005760)
+          , (Y 5.0, 0.006418)
+          ]
+    }
 csSantander
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.002854)
-    , (Y 2.0, 0.003461)
-    , (Y 3.0, 0.004303)
-    , (Y 4.0, 0.005031)
-    , (Y 5.0, 0.005688)
-    ]
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.002854)
+          , (Y 2.0, 0.003461)
+          , (Y 3.0, 0.004303)
+          , (Y 4.0, 0.005031)
+          , (Y 5.0, 0.005688)
+          ]
+    }
 csUBS
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.005124)
-    , (Y 2.0, 0.006063)
-    , (Y 3.0, 0.006669)
-    , (Y 4.0, 0.007149)
-    , (Y 4.0, 0.007574)
-    ]
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.005124)
+          , (Y 2.0, 0.006063)
+          , (Y 3.0, 0.006669)
+          , (Y 4.0, 0.007149)
+          , (Y 4.0, 0.007574)
+          ]
+    }
 csDeutscheBank
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.008574)
-    , (Y 2.0, 0.009352)
-    , (Y 3.0, 0.010089)
-    , (Y 4.0, 0.010959)
-    , (Y 5.0, 0.011833)
-    ]
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.008574)
+          , (Y 2.0, 0.009352)
+          , (Y 3.0, 0.010089)
+          , (Y 4.0, 0.010959)
+          , (Y 5.0, 0.011833)
+          ]
+    }
 
 csKannan1, csKannan2, csKannan3
   :: CreditSpread
 csKannan1
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.00500)
-    , (Y 2.0, 0.00770)
-    , (Y 3.0, 0.00940)
-    , (Y 4.0, 0.01095)
-    , (Y 5.0, 0.01250)
-    ]
-csKannan2 -- FIXME: recoveryRate = 0.50
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.00290)
-    , (Y 2.0, 0.00390)
-    , (Y 3.0, 0.00460)
-    , (Y 4.0, 0.00520)
-    , (Y 5.0, 0.00570)
-    ]
-csKannan3
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.00112)
-    , (Y 2.0, 0.00277)
-    , (Y 3.0, 0.00369)
-    , (Y 4.0, 0.00571)
-    , (Y 5.0, 0.00678)
-    ]
-csKannan4
-  = CreditSpread $ Map.fromList
-    [ (Y 1.0, 0.00177)
-    , (Y 2.0, 0.00446)
-    , (Y 3.0, 0.00548)
-    , (Y 4.0, 0.00835)
-    , (Y 5.0, 0.00962)
-    ]
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.00500)
+          , (Y 2.0, 0.00770)
+          , (Y 3.0, 0.00940)
+          , (Y 4.0, 0.01095)
+          , (Y 5.0, 0.01250)
+          ]
+    }
+csKannan2
+  = CreditSpread
+    { recoveryRate
+        = 0.50 -- !!!
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.00290)
+          , (Y 2.0, 0.00390)
+          , (Y 3.0, 0.00460)
+          , (Y 4.0, 0.00520)
+          , (Y 5.0, 0.00570)
+          ]
+    }
+csKannan3 -- HSBC
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.00112)
+          , (Y 2.0, 0.00277)
+          , (Y 3.0, 0.00369)
+          , (Y 4.0, 0.00571)
+          , (Y 5.0, 0.00678)
+          ]
+    }
+csKannan4 -- Barclays
+  = CreditSpread
+    { recoveryRate
+        = 0.40
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.00177)
+          , (Y 2.0, 0.00446)
+          , (Y 3.0, 0.00548)
+          , (Y 4.0, 0.00835)
+          , (Y 5.0, 0.00962)
+          ]
+    }
+csKannan5 -- Wells Fargo (WFC)
+  = CreditSpread
+    { recoveryRate
+        = 0.50
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.00500)
+          , (Y 2.0, 0.00770)
+          , (Y 3.0, 0.00940)
+          , (Y 5.0, 0.01250)
+          , (Y 7.0, 0.01330)
+          ]
+    }
+csKannan6 -- Clear Channel Communication (CCMO)
+  = CreditSpread
+    { recoveryRate
+        = 0.10
+    , cs_pillars
+        = Map.fromList
+          [ (Y 1.0, 0.07510)
+          , (Y 2.0, 0.11640)
+          , (Y 3.0, 0.18740)
+          , (Y 5.0, 0.41560)
+          , (Y 7.0, 0.60830)
+          ]
+    }
 
 --------------------------------------------------------------------------------
 -- Credit Default Swap bootstrapping
@@ -229,19 +343,27 @@ data SurvivalCurve
   = SurvivalCurve { sc_pillars :: Map Tenor Double }
   deriving (Show)
 
-recoveryRate :: Double
-recoveryRate = 0.40
+data HazardCurve
+  = HazardCurve { hc_pillars :: Map Tenor Double }
+  deriving (Show)
 
-bootstrap :: RateCurve -> CreditSpread -> SurvivalCurve
-bootstrap rc cs
-  = SurvivalCurve { sc_pillars = Map.fromList (tail (zip tenors survivals)) }
+-- this matches the numbers from Kannan's notebook :)
+bootstrap
+  :: RateCurve
+  -> CreditSpread
+  -> Maybe [Tenor]
+  -> (SurvivalCurve, HazardCurve)
+bootstrap rc cs pillars'
+  = ( SurvivalCurve { sc_pillars = Map.fromList (tail (zip tenors survivals)) }
+    , HazardCurve { hc_pillars = Map.fromList (tail (zip tenors hazardRates)) }
+    )
   where
     lossRate
-      = 1 - recoveryRate
+      = 1 - recoveryRate cs
     tenors@(tenor0:tenor1:_)
-      = Y 0 : pillars cs
+      = Y 0 : fromMaybe (pillars cs) pillars'
     deltaTs@(deltaT0:deltaT1:_)
-      = undefined : map (deltaT cs) (tail tenors)
+      = undefined : map (deltaT tenors) (tail tenors)
     survival0
       = 1
     survival1
@@ -272,6 +394,11 @@ bootstrap rc cs
             (survivals !! (n-1) * lossRate)
               /
             (lossRate + deltaTs !! n * creditSpread cs (tenors !! n))
+    hazardRates
+      = undefined : zipWith3 hr (tail deltaTs) (tail survivals) (init survivals)
+      where
+        hr dt p p'
+          = -(1 / dt) * log (p / p')
 
 --------------------------------------------------------------------------------
 -- Basket CDS
