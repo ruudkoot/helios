@@ -1,5 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+-- ELECTIVES:
+-- * Counterpary credit ris
+-- * Advanced risk management
 -- IMPLEMENTATION:
 -- * Cholesky decomposition
 -- * Copulas
